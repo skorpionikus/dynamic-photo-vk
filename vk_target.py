@@ -2,6 +2,7 @@
 import json
 import logging
 import requests as req
+import re
 
 logging.getLogger("requests").setLevel(logging.WARNING)
 
@@ -30,6 +31,10 @@ class Target:
 
         self.id = l_cookie
         self.s = s
+        
+        self.re_share = re.compile(r'"upload":{"url":"(.+)"},"edited"')
+        self.re_pe_hashes = re.compile(r'"pe_hash":"(\w+)"')
+        self.re_ids = re.compile(r'"id":"(\w+)"')
 
     def get_hash(self, pid):
         photo_id = '%s_%s' % (self.id, pid)
@@ -40,16 +45,15 @@ class Target:
             'module': 'profile'
         }
         r = self.s.post('https://vk.com/al_photos.php', data)
-        j = get_json(r.text)
-        hs = [x['pe_hash'] for x in j if x['id'] == photo_id][0]
-        return hs
+        ids = re.findall(self.re_ids, r.text)
+        return [n for i,n in enumerate(re.findall(self.re_pe_hashes, r.text)) if ids[i] == photo_id][0]
 
     def change_photo(self, path, pid):
         data = {'act': 'get_editor', 'al': 1,
                 'photo_id': '%s_%s' % (self.id, pid),
                 'hash': self.get_hash(pid)}
         res = self.s.post('https://vk.com/al_photos.php', data)
-        url = get_json(res.text)['upload']['url']
+        url = re.search(self.re_share, res.text).group(1).replace('\\','')
 
         photo = upload_photo(path, url)
 
@@ -65,14 +69,7 @@ class Target:
         if 'ошибка' in res.text.lower():
             print(res.text, photo, sep='\n\n', end='\n\n---\n\n')
             return res, photo
-
-
-def get_json(response):
-    try:
-        return json.loads(response.split('<!json>')[1].split('<!>')[0])
-    except IndexError:
-        raise Exception(response[:150])
-
+        
 
 def upload_photo(path, server):
     if isinstance(path, str):
